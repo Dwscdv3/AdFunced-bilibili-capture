@@ -75,7 +75,7 @@
          && (!event.repeat || (event.repeat && mappingInfo.repeat))
          && !(document.activeElement instanceof HTMLTextAreaElement)
          && !(document.activeElement instanceof HTMLInputElement)) {
-            mappingInfo.handler();··
+            mappingInfo.handler();
         }
     });
 
