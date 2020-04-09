@@ -6,7 +6,7 @@
 
 ## 安装
 
-[点击此处](https://github.com/Dwscdv3/AdFunced-bilibili-capture/blob/master/AdFunced-bilibili-capture.user.js)。
+[点击此处](https://github.com/Dwscdv3/AdFunced-bilibili-capture/raw/master/AdFunced-bilibili-capture.user.js)。
 
 您的浏览器需要安装有 Greasemonkey 或与其兼容的用户脚本管理器扩展（如 Tampermonkey），否则将看到源代码而不是安装界面。
 
