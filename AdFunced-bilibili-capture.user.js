@@ -53,7 +53,7 @@
                 const anchorElement = document.createElement('a');
                 const blobURL = URL.createObjectURL(blob);
                 anchorElement.href = blobURL;
-                anchorElement.download = `${bvid}-${(seconds / 60).toFixed(0).padStart(2, "0")}-${(seconds % 60).toFixed(0).padStart(2, "0")}.${extension}`;
+                anchorElement.download = `${bvid}-${Math.floor(seconds / 60).toFixed(0).padStart(2, "0")}-${Math.floor(seconds % 60).toFixed(0).padStart(2, "0")}.${extension}`;
                 anchorElement.click();
                 URL.revokeObjectURL(blobURL);
             }, mimeType, quality);
