@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AdFunced bilibili capture
 // @namespace    dwscdv3
-// @version      0.2
+// @version      0.2.1
 // @description  Quick screenshot, GIF recording, frame-by-frame seeking, and some other features
 // @author       Dwscdv3
 // @match        *://www.bilibili.com/video/*
@@ -199,9 +199,8 @@
             canvasElement.width = width;
             canvasElement.height = height;
             const canvas = canvasElement.getContext('2d');
+            canvas.imageSmoothingQuality = 'high';
             let gifEndTime = null;
-
-            console.debug(GM_config.get('gifQuality'));
 
             player.pause();
 
