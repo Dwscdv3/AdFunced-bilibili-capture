@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AdFunced bilibili capture
 // @namespace    dwscdv3
-// @version      0.2.1
+// @version      0.2.2
 // @description  Quick screenshot, GIF recording, frame-by-frame seeking, and some other features
 // @author       Dwscdv3
 // @match        *://www.bilibili.com/video/*
@@ -241,8 +241,7 @@
     }
 
     function setMarker() {
-        const videoElement = $(videoElementSelector);
-        gifBeginTime = $(videoElementSelector).currentTime;
+        gifBeginTime = player.getCurrentTime();
         let markerElement = document.getElementById(markerID);
         if (!markerElement) {
             markerElement = document.createElement('div');
@@ -252,7 +251,7 @@
             markerElement.style.pointerEvents = 'none';
             $('.bilibili-player-video-progress').appendChild(markerElement);
         }
-        markerElement.style.left = `${videoElement.currentTime / videoElement.duration * 100}%`;
+        markerElement.style.left = `${player.getCurrentTime() / player.getDuration() * 100}%`;
     }
     function clearMarker() {
         gifBeginTime = null;
