@@ -1,9 +1,11 @@
 // ==UserScript==
 // @name         AdFunced bilibili capture
 // @namespace    dwscdv3
-// @version      0.2.2
+// @version      0.3.0
 // @description  Quick screenshot, GIF recording, frame-by-frame seeking, and some other features
 // @author       Dwscdv3
+// @match        *://www.acfun.cn/v/ac*
+// @match        *://www.acfun.cn/bangumi/aa*
 // @match        *://www.bilibili.com/video/*
 // @match        *://www.bilibili.com/bangumi/play/*
 // @require      https://openuserjs.org/src/libs/sizzle/GM_config.js
@@ -51,9 +53,50 @@
         'ContextMenu': { repeat: false, ctrl: true, handler: GM_config.open.bind(GM_config) },
     };
 
-    const ScriptIdentifier = 'AdFunced-bilibili-capture';
+    // You can add support for more sites by extending this object.
+    const SiteSpecificConfig = {
+        'www.acfun.cn': {
+            onSiteInit: () => {
+                siteData.fps = 24;
+                setInterval(() => { siteData.fps = Math.max(siteData.fps, parseFloat($('[data-bind-key="decodedFPS"]').textContent)); }, 1000);
+            },
+            getVideoID: () => location.pathname.match(/(aa|ac)\d+/)[0],
+            getFPS: () => siteData.fps,
+            videoElementSelector: 'video',
+            danmakuElementSelector: '.danmaku-screen',
+            danmakuSwitchElementSelector: '.danmaku-enabled',
+            danmakuSwitchStyleElementSelector: '.danmaku-enabled',
+            progressBarElementSelector: '.wrap-progress',
+        },
+        'www.bilibili.com': {
+            getVideoID: () => bvid,
+            getFPS: () => player.getMediaInfo().fps || 30,
+            videoElementSelector: '.bilibili-player-video > video',
+            danmakuElementSelector: '.bilibili-player-video-danmaku',
+            danmakuSwitchElementSelector: '.bilibili-player-video-danmaku-switch > input[type=checkbox]',
+            danmakuSwitchStyleElementSelector: '.bilibili-player-video-danmaku-switch > .bui-body',
+            progressBarElementSelector: '.bilibili-player-video-progress',
+        },
+    };
 
-    const videoElementSelector = '.bilibili-player-video > video';
+    // ====================================================================================
+    // WARNING: You shouldn't change anything below unless you are confident with yourself.
+    // ====================================================================================
+
+    const {
+        onSiteInit,
+        getVideoID,
+        getFPS,
+        videoElementSelector,
+        danmakuElementSelector,
+        danmakuSwitchElementSelector,
+        danmakuSwitchStyleElementSelector,
+        progressBarElementSelector,
+    } = SiteSpecificConfig[location.hostname];
+
+    const siteData = {};
+
+    const ScriptIdentifier = 'AdFunced-bilibili-capture';
 
     const markerID = `${ScriptIdentifier}_marker`;
     const markerHTML = `
@@ -64,6 +107,8 @@
     let gifBeginTime = null;
     let gifWorkerBlob = null;
     let gifWorkerURL = null;
+
+    onSiteInit && onSiteInit();
 
     GM_config.init({
         id: `${ScriptIdentifier}_settings`,
@@ -146,16 +191,16 @@
 
     // Replace danmaku switch logic for better experience
     setInterval(function () {
-        const danmakuSwitchElement = $('.bilibili-player-video-danmaku-switch > input[type=checkbox]');
+        const danmakuSwitchElement = $(danmakuSwitchElementSelector);
         if (danmakuSwitchElement && !danmakuSwitchElement.dataset.abcLoaded) {
             const newDanmakuSwitchElement = danmakuSwitchElement.cloneNode(true);
             newDanmakuSwitchElement.addEventListener('change', function (event) {
-                const danmakuElement = $('.bilibili-player-video-danmaku');
+                const danmakuElement = $(danmakuElementSelector);
                 danmakuElement.style.visibility = danmakuElement.style.visibility == 'hidden' ? 'visible' : 'hidden';
             });
             newDanmakuSwitchElement.dataset.abcLoaded = 'true';
             danmakuSwitchElement.parentNode.replaceChild(newDanmakuSwitchElement, danmakuSwitchElement);
-            $('.bilibili-player-video-danmaku-switch > .bui-body').style.filter = 'hue-rotate(140deg)'; // Change color to indicate script load state
+            $(danmakuSwitchStyleElementSelector).style.filter = 'hue-rotate(140deg)'; // Change color to indicate script load state
         }
     }, 1000);
 
@@ -175,7 +220,8 @@
                 const anchorElement = document.createElement('a');
                 const blobURL = URL.createObjectURL(blob);
                 anchorElement.href = blobURL;
-                anchorElement.download = `${bvid}-${Math.floor(seconds / 60).toFixed(0).padStart(2, "0")}-${Math.floor(seconds % 60).toFixed(0).padStart(2, "0")}.${extension}`;
+                anchorElement.download =
+                    `${getVideoID()}-${Math.floor(seconds / 60).toFixed(0).padStart(2, "0")}-${Math.floor(seconds % 60).toFixed(0).padStart(2, "0")}.${extension}`;
                 anchorElement.click();
                 URL.revokeObjectURL(blobURL);
             }, mimeType, quality);
@@ -202,7 +248,7 @@
             canvas.imageSmoothingQuality = 'high';
             let gifEndTime = null;
 
-            player.pause();
+            videoElement.pause();
 
             if (videoElement.currentTime >= gifBeginTime) {
                 gifEndTime = videoElement.currentTime;
@@ -232,16 +278,16 @@
     }
 
     function nextFrame() {
-        player.pause();
-        $(videoElementSelector).currentTime += 1 / (player.getMediaInfo().fps || 30);
+        $(videoElementSelector).pause();
+        $(videoElementSelector).currentTime += 1 / getFPS();
     }
     function previousFrame() {
-        player.pause();
-        $(videoElementSelector).currentTime -= 1 / (player.getMediaInfo().fps || 30);
+        $(videoElementSelector).pause();
+        $(videoElementSelector).currentTime -= 1 / getFPS();
     }
 
     function setMarker() {
-        gifBeginTime = player.getCurrentTime();
+        gifBeginTime = $(videoElementSelector).currentTime;
         let markerElement = document.getElementById(markerID);
         if (!markerElement) {
             markerElement = document.createElement('div');
@@ -249,9 +295,13 @@
             markerElement.innerHTML = markerHTML;
             markerElement.style.position = 'absolute';
             markerElement.style.pointerEvents = 'none';
-            $('.bilibili-player-video-progress').appendChild(markerElement);
+            $(progressBarElementSelector).appendChild(markerElement);
         }
-        markerElement.style.left = `${player.getCurrentTime() / player.getDuration() * 100}%`;
+        if (location.hostname === 'www.bilibili.com') {
+            markerElement.style.left = `${player.getCurrentTime() / player.getDuration() * 100}%`;
+        } else {
+            markerElement.style.left = `${$(videoElementSelector).currentTime / $(videoElementSelector).duration * 100}%`;
+        }
     }
     function clearMarker() {
         gifBeginTime = null;
