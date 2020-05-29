@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AdFunced bilibili capture
 // @namespace    dwscdv3
-// @version      0.3.0
+// @version      0.3.1
 // @description  Quick screenshot, GIF recording, frame-by-frame seeking, and some other features
 // @author       Dwscdv3
 // @match        *://www.acfun.cn/v/ac*
@@ -189,20 +189,22 @@
         },
     });
 
-    // Replace danmaku switch logic for better experience
-    setInterval(function () {
-        const danmakuSwitchElement = $(danmakuSwitchElementSelector);
-        if (danmakuSwitchElement && !danmakuSwitchElement.dataset.abcLoaded) {
-            const newDanmakuSwitchElement = danmakuSwitchElement.cloneNode(true);
-            newDanmakuSwitchElement.addEventListener('change', function (event) {
-                const danmakuElement = $(danmakuElementSelector);
-                danmakuElement.style.visibility = danmakuElement.style.visibility == 'hidden' ? 'visible' : 'hidden';
-            });
-            newDanmakuSwitchElement.dataset.abcLoaded = 'true';
-            danmakuSwitchElement.parentNode.replaceChild(newDanmakuSwitchElement, danmakuSwitchElement);
-            $(danmakuSwitchStyleElementSelector).style.filter = 'hue-rotate(140deg)'; // Change color to indicate script load state
-        }
-    }, 1000);
+    if (location.hostname === 'www.bilibili.com') {
+        // Replace danmaku switch logic for better experience
+        setInterval(function () {
+            const danmakuSwitchElement = $(danmakuSwitchElementSelector);
+            if (danmakuSwitchElement && !danmakuSwitchElement.dataset.abcLoaded) {
+                const newDanmakuSwitchElement = danmakuSwitchElement.cloneNode(true);
+                newDanmakuSwitchElement.addEventListener('change', function (event) {
+                    const danmakuElement = $(danmakuElementSelector);
+                    danmakuElement.style.visibility = danmakuElement.style.visibility == 'hidden' ? 'visible' : 'hidden';
+                });
+                newDanmakuSwitchElement.dataset.abcLoaded = 'true';
+                danmakuSwitchElement.parentNode.replaceChild(newDanmakuSwitchElement, danmakuSwitchElement);
+                $(danmakuSwitchStyleElementSelector).style.filter = 'hue-rotate(140deg)'; // Change color to indicate script load state
+            }
+        }, 1000);
+    }
 
     function screenshot(mimeType, extension, quality) {
         const videoElement = $(videoElementSelector);
