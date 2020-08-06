@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AdFunced bilibili capture
 // @namespace    dwscdv3
-// @version      0.3.1
+// @version      0.3.2
 // @description  Quick screenshot, GIF recording, frame-by-frame seeking, and some other features
 // @author       Dwscdv3
 // @match        *://www.acfun.cn/v/ac*
@@ -74,7 +74,7 @@
             videoElementSelector: '.bilibili-player-video > video',
             danmakuElementSelector: '.bilibili-player-video-danmaku',
             danmakuSwitchElementSelector: '.bilibili-player-video-danmaku-switch > input[type=checkbox]',
-            danmakuSwitchStyleElementSelector: '.bilibili-player-video-danmaku-switch > .bui-body',
+            danmakuSwitchStyleElementSelector: '.bilibili-player-video-danmaku-switch .bui-switch-body',
             progressBarElementSelector: '.bilibili-player-video-progress',
         },
     };
