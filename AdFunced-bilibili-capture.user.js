@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AdFunced bilibili capture
 // @namespace    dwscdv3
-// @version      1.0.0
+// @version      1.0.1
 // @description  Quick screenshot, GIF recording and frame-by-frame seeking.
 // @author       Dwscdv3
 // @updateURL    https://github.com/Dwscdv3/AdFunced-bilibili-capture/raw/master/AdFunced-bilibili-capture.user.js
@@ -63,9 +63,9 @@
     const SiteProfiles = {
         'www.bilibili.com': {
             video: {
-                getId() { return bvid; },
-                getDuration() { return player.getDuration(); },
-                getCurrentTime() { return player.getCurrentTime(); },
+                getId() { return bvid || Default.video.getId(); },
+                getDuration() { return player?.getDuration() || Default.video.getDuration(); },
+                getCurrentTime() { return player?.getCurrentTime() || Default.video.getCurrentTime(); },
             },
             UI: {
                 progressBarElementSelector: '.bilibili-player-video-progress',
@@ -106,7 +106,6 @@
                         if (this.frameTimeHistory.length > 60) {
                             this.frameTimeHistory.pop();
                             this._highestFPS = Math.max(this._highestFPS, this.frameTimeHistory.length / (this.frameTimeHistory.reduce((total, next) => total + next)));
-                            console.log(this._highestFPS);
                         }
                     }
                     videoElement.requestVideoFrameCallback(this.videoFrameCallbackHandler);
