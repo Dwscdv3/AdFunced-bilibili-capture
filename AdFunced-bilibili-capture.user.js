@@ -1,15 +1,18 @@
 // ==UserScript==
 // @name         AdFunced bilibili capture
 // @namespace    dwscdv3
-// @version      0.3.2
-// @description  Quick screenshot, GIF recording, frame-by-frame seeking, and some other features
+// @version      1.0.0
+// @description  Quick screenshot, GIF recording and frame-by-frame seeking.
 // @author       Dwscdv3
-// @match        *://www.acfun.cn/v/ac*
-// @match        *://www.acfun.cn/bangumi/aa*
-// @match        *://www.bilibili.com/video/*
-// @match        *://www.bilibili.com/bangumi/play/*
+// @updateURL    https://github.com/Dwscdv3/AdFunced-bilibili-capture/raw/master/AdFunced-bilibili-capture.user.js
+// @downloadURL  https://github.com/Dwscdv3/AdFunced-bilibili-capture/raw/master/AdFunced-bilibili-capture.user.js
+// @homepageURL  https://dwscdv3.com/
+// @supportURL   https://github.com/Dwscdv3/AdFunced-bilibili-capture
+// @license      GPL-3.0-or-later
+// @match        *://*/*
 // @require      https://openuserjs.org/src/libs/sizzle/GM_config.js
 // @require      https://cdnjs.cloudflare.com/ajax/libs/gif.js/0.2.0/gif.js
+// @require      https://cdnjs.cloudflare.com/ajax/libs/pica/6.1.1/pica.min.js
 // @grant        GM_getValue
 // @grant        GM_setValue
 // @grant        GM_xmlhttpRequest
@@ -17,8 +20,8 @@
 // ==/UserScript==
 
 // TODO:
+//   Video recording
 //   An option to record GIF during video play, not by seeking (much faster, but less accurate)
-//   Move JPEG quality parameter from digit keys to settings panel
 //   Custom key binding
 //   Fancier settings panel
 
@@ -33,90 +36,289 @@
 (function() {
     'use strict';
 
+    const ProductName = 'ABC';
+
     const keyMapping = {
-        'a': { repeat: true, handler: previousFrame },
-        'd': { repeat: true, handler: nextFrame },
-        'c': { repeat: false, handler: function () { screenshot(); } },
-        's': { repeat: false, handler: function () { screenshot('image/png', 'png'); } },
-        '1': { repeat: false, handler: function () { screenshot('image/jpeg', 'jpg', 0.1); } },
-        '2': { repeat: false, handler: function () { screenshot('image/jpeg', 'jpg', 0.2); } },
-        '3': { repeat: false, handler: function () { screenshot('image/jpeg', 'jpg', 0.3); } },
-        '4': { repeat: false, handler: function () { screenshot('image/jpeg', 'jpg', 0.4); } },
-        '5': { repeat: false, handler: function () { screenshot('image/jpeg', 'jpg', 0.5); } },
-        '6': { repeat: false, handler: function () { screenshot('image/jpeg', 'jpg', 0.6); } },
-        '7': { repeat: false, handler: function () { screenshot('image/jpeg', 'jpg', 0.7); } },
-        '8': { repeat: false, handler: function () { screenshot('image/jpeg', 'jpg', 0.8); } },
-        '9': { repeat: false, handler: function () { screenshot('image/jpeg', 'jpg', 0.9); } },
-        '0': { repeat: false, handler: function () { screenshot('image/jpeg', 'jpg', 1.0); } },
-        'z': { repeat: true, handler: setMarker },
-        'x': { repeat: false, handler: record },
-        'ContextMenu': { repeat: false, ctrl: true, handler: GM_config.open.bind(GM_config) },
+        'a': { repeat: true, handler: function () { video.previousFrame(); } },
+        'd': { repeat: true, handler: function () { video.nextFrame(); } },
+        'c': { ctrl: true, repeat: false, handler: function () { if (!getSelection().toString()) capture.screenshot(); } },
+        's': { repeat: false, handler: function () {
+            switch (GM_config.get('imageFormat')) {
+                case 'JPEG':
+                    capture.screenshot('image/jpeg', 'jpg', Number(GM_config.get('jpegQuality') / 100));
+                    break;
+                case 'PNG':
+                    capture.screenshot('image/png', 'png');
+                    break;
+                default:
+                    throw new Error('Invalid image format.');
+            }
+        } },
+        'z': { repeat: true, handler: function () { UI.setMarker(); } },
+        'x': { repeat: false, handler: function () { capture.record(); } },
+        'ContextMenu': { ctrl: true, repeat: false, handler: GM_config.open.bind(GM_config) },
     };
 
     // You can add support for more sites by extending this object.
-    const SiteSpecificConfig = {
-        'www.acfun.cn': {
-            onSiteInit: () => {
-                siteData.fps = 24;
-                setInterval(() => { siteData.fps = Math.max(siteData.fps, parseFloat($('[data-bind-key="decodedFPS"]').textContent)); }, 1000);
-            },
-            getVideoID: () => location.pathname.match(/(aa|ac)\d+/)[0],
-            getFPS: () => siteData.fps,
-            videoElementSelector: 'video',
-            danmakuElementSelector: '.danmaku-screen',
-            danmakuSwitchElementSelector: '.danmaku-enabled',
-            danmakuSwitchStyleElementSelector: '.danmaku-enabled',
-            progressBarElementSelector: '.wrap-progress',
-        },
+    const SiteProfiles = {
         'www.bilibili.com': {
-            getVideoID: () => bvid,
-            getFPS: () => player.getMediaInfo().fps || 30,
-            videoElementSelector: '.bilibili-player-video > video',
-            danmakuElementSelector: '.bilibili-player-video-danmaku',
-            danmakuSwitchElementSelector: '.bilibili-player-video-danmaku-switch > input[type=checkbox]',
-            danmakuSwitchStyleElementSelector: '.bilibili-player-video-danmaku-switch .bui-switch-body',
-            progressBarElementSelector: '.bilibili-player-video-progress',
+            video: {
+                getId() { return bvid; },
+                getDuration() { return player.getDuration(); },
+                getCurrentTime() { return player.getCurrentTime(); },
+            },
+            UI: {
+                progressBarElementSelector: '.bilibili-player-video-progress',
+            },
+        },
+        'www.acfun.cn': {
+            video: {
+                getId() { return location.pathname.match(/(aa|ac)\d+/)[0]; },
+            },
+            UI: {
+                progressBarElementSelector: '.wrap-progress',
+            },
+        },
+        'www.youtube.com': {
+            video: {
+                getId() { return new URL(location).searchParams.get('v'); },
+            },
+            UI: {
+                progressBarElementSelector: '.ytp-progress-bar',
+            },
         },
     };
 
-    // ====================================================================================
-    // WARNING: You shouldn't change anything below unless you are confident with yourself.
-    // ====================================================================================
+    const Default = {
+        video: {
+            videoElementSelector: 'video',
+            lastFrameMediaTime: 0,
+            frameTimeHistory: [],
+            _currentVideoElement: null,
+            _highestFPS: 0,
+            videoFrameCallbackHandler(now, metadata) {
+                const videoElement = this.getBaseElement();
+                if (videoElement) {
+                    const deltaTime = metadata.mediaTime - this.lastFrameMediaTime;
+                    this.lastFrameMediaTime = metadata.mediaTime;
+                    if (deltaTime > 0.006 && deltaTime <= 0.25) {
+                        this.frameTimeHistory.unshift(deltaTime);
+                        if (this.frameTimeHistory.length > 60) {
+                            this.frameTimeHistory.pop();
+                            this._highestFPS = Math.max(this._highestFPS, this.frameTimeHistory.length / (this.frameTimeHistory.reduce((total, next) => total + next)));
+                            console.log(this._highestFPS);
+                        }
+                    }
+                    videoElement.requestVideoFrameCallback(this.videoFrameCallbackHandler);
+                }
+            },
+            getBaseElement() { return $(this.videoElementSelector); },
+            getId() { return `${location.hostname}-${location.pathname.substring(location.pathname.lastIndexOf('/') + 1).replace(/\.html?$/, '')}`; },
+            getPaused() { return this.getBaseElement().paused; },
+            getDuration() { return this.getBaseElement().duration; },
+            getCurrentTime() { return this.getBaseElement().currentTime; },
+            getAspectRatio() { return this.getBaseElement().videoWidth / this.getBaseElement().videoHeight; },
+            getFPS() { return this.frameTimeHistory.length === 0 ? 60 : this._highestFPS; },
+            nextFrame() {
+                this.getBaseElement().pause();
+                this.getBaseElement().currentTime += 1 / this.getFPS();
+            },
+            previousFrame() {
+                this.getBaseElement().pause();
+                this.getBaseElement().currentTime -= 1 / this.getFPS();
+            },
+        },
+        capture: {
+            beginTime: null,
+            screenshot(mimeType, extension, quality) {
+                const videoElement = video.getBaseElement();
+                const canvasElement = createElement('canvas', {
+                    width: videoElement.videoWidth,
+                    height: videoElement.videoHeight,
+                });
+                const canvas = canvasElement.getContext('2d');
+                canvas.drawImage(videoElement, 0, 0, canvasElement.width, canvasElement.height);
+                const seconds = videoElement.currentTime;
+                canvasElement.toBlob(function (blob) {
+                    navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+                });
+                if (mimeType) {
+                    canvasElement.toBlob(function (blob) {
+                        const blobURL = URL.createObjectURL(blob);
+                        const anchorElement = createElement('a', {
+                            href: blobURL,
+                            download: `${video.getId()}-${Math.floor(seconds / 60).toFixed(0).padStart(2, "0")}-${Math.floor(seconds % 60).toFixed(0).padStart(2, "0")}.${extension}`,
+                        });
+                        anchorElement.click();
+                        URL.revokeObjectURL(blobURL);
+                    }, mimeType, quality);
+                }
+            },
+            record() {
+                const videoElement = video.getBaseElement();
+                if (this.beginTime && this.beginTime >= 0 && this.beginTime < videoElement.duration) {
+                    const delta = Math.round(100 / parseFloat(GM_config.get('gifFPS'))) * 10;
+                    const height = GM_config.get('gifHeight');
+                    const width = Math.round(height * video.getAspectRatio());
+                    const gif = new GIF({
+                        workers: 2,
+                        workerScript: gifjs.workerURL,
+                        quality: Math.pow(2, parseInt(GM_config.get('gifQuality')[0]) - 1),
+                        width: width,
+                        height: height,
+                        dither: GM_config.get('gifDithering') ? 'FloydSteinberg' : false,
+                    });
 
-    const {
-        onSiteInit,
-        getVideoID,
-        getFPS,
-        videoElementSelector,
-        danmakuElementSelector,
-        danmakuSwitchElementSelector,
-        danmakuSwitchStyleElementSelector,
-        progressBarElementSelector,
-    } = SiteSpecificConfig[location.hostname];
+                    const canvasElement = createElement('canvas', {
+                        width: videoElement.videoWidth,
+                        height: videoElement.videoHeight,
+                    });
+                    const canvas = canvasElement.getContext('2d');
+                    canvas.imageSmoothingQuality = 'high';
 
-    const siteData = {};
+                    const canvasResizedElement = createElement('canvas', {
+                        width,
+                        height,
+                    });
+                    const canvasResized = canvasResizedElement.getContext('2d');
+                    canvasResized.imageSmoothingQuality = 'high';
 
-    const ScriptIdentifier = 'AdFunced-bilibili-capture';
+                    let endTime = null;
 
-    const markerID = `${ScriptIdentifier}_marker`;
-    const markerHTML = `
-<div style="width: 0; border-style: solid; border-width: 6px 5.5px 0; border-color: #66ccff transparent transparent; transform: translate(-6px, -26px)"></div>
-<div style="width: 1px; height: 14px; background: #66ccff; transform: translate(-1px, -27px)"></div>
-`;
+                    videoElement.pause();
 
-    let gifBeginTime = null;
-    let gifWorkerBlob = null;
-    let gifWorkerURL = null;
+                    if (Default.video.getCurrentTime() >= this.beginTime) {
+                        endTime = Default.video.getCurrentTime();
+                    } else {
+                        endTime = this.beginTime;
+                        this.beginTime = Default.video.getCurrentTime();
+                    }
+
+                    videoElement.addEventListener('seeked', async function onSeeked(event) {
+                        canvas.drawImage(videoElement, 0, 0, canvasElement.width, canvasElement.height);
+                        await pica.resize(canvasElement, canvasResizedElement, { quality: 1 });
+                        gif.addFrame(canvasResized, {
+                            delay: delta,
+                            copy: true,
+                        });
+                        if (videoElement.currentTime + delta / 1000 <= endTime) {
+                            videoElement.currentTime += delta / 1000;
+                        } else {
+                            videoElement.removeEventListener('seeked', onSeeked);
+                            gif.on('start', function() {
+                                UI.encodingProgressElement.textContent = `Encoding... 0%`;
+                                document.body.append(UI.encodingProgressElement);
+                            });
+                            gif.on('progress', function(progress) {
+                                UI.encodingProgressElement.textContent = `Encoding... ${Math.round(progress * 100)}%`;
+                            });
+                            gif.on('finished', function(blob) {
+                                UI.encodingProgressElement.remove();
+                                window.open(URL.createObjectURL(blob));
+                            });
+                            gif.render();
+                        }
+                    });
+                    videoElement.currentTime = this.beginTime;
+                }
+            },
+        },
+        UI: {
+            progressBarElementSelector: null,
+            markerElement: createElement('div', {
+                id: `${ProductName}-marker`,
+                styles: {
+                    position: 'absolute',
+                    pointerEvents: 'none',
+                },
+                children: [
+                    createElement('div', {
+                        styles: {
+                            width: '0',
+                            borderStyle: 'solid',
+                            borderWidth: '6px 5.5px 0',
+                            borderColor: '#66ccff transparent transparent',
+                            transform: 'translate(-6px, -26px)',
+                        },
+                    }),
+                    createElement('div', {
+                        styles: {
+                            width: '1px',
+                            height: '14px',
+                            background: '#66ccff',
+                            transform: 'translate(-1px, -27px)',
+                        },
+                    }),
+                ],
+            }),
+            encodingProgressElement: createElement('div', {
+                id: `{ProductName}-progress`,
+                styles: {
+                    position: 'fixed',
+                    left: '50%',
+                    top: '50%',
+                    transform: 'translate(-50%, -50%)',
+                    zIndex: '10000',
+                    padding: '0.8em 1em',
+                    color: '#eee',
+                    background: '#0009',
+                    borderRadius: '0.5em',
+                    fontSize: '150%',
+                },
+            }),
+            setMarker() {
+                capture.beginTime = Default.video.getCurrentTime();
+                if ($(UI.progressBarElementSelector)) {
+                    $(UI.progressBarElementSelector).append(this.markerElement);
+                    this.markerElement.style.left = `${video.getCurrentTime() / video.getDuration() * 100}%`;
+                }
+            },
+            clearMarker() {
+                capture.beginTime = null;
+                this.markerElement.remove();
+            },
+        },
+        gifjs: {
+            workerBlob: null,
+            workerURL: null,
+        },
+        onSiteInit() {},
+    };
+
+    const ABC = SiteProfiles[location.host] ? deepMerge(Default, SiteProfiles[location.host]) : Default;
+    bindAll(Default);
+    bindAll(ABC);
+    const { video, capture, UI, gifjs, onSiteInit } = unsafeWindow[ProductName] = ABC;
+
+    const pica = window.pica({ tile: 8192 });
 
     onSiteInit && onSiteInit();
 
     GM_config.init({
-        id: `${ScriptIdentifier}_settings`,
+        id: `${ProductName}_settings`,
         title: 'AdFunced bilibili capture - Settings',
         fields: {
+            imageFormat: {
+                label: 'Image Format',
+                title: 'Image Format: PNG is lossless, while JPEG is more space-efficient.',
+                section: 'Screenshot',
+                type: 'select',
+                options: [
+                    'JPEG',
+                    'PNG',
+                ],
+                default: 'JPEG',
+            },
+            jpegQuality: {
+                label: 'JPEG Quality',
+                title: 'JPEG Quality: Values between 60 - 95 is recommended.',
+                type: 'int',
+                min: 0, max: 100, default: 80,
+            },
             gifHeight: {
                 label: 'GIF Height',
                 title: 'GIF Height: Width is automatically calculated based on aspect ratio.',
+                section: 'GIF Recording',
                 type: 'int',
                 min: 72, max: 1080, default: 360,
             },
@@ -157,15 +359,16 @@
             },
         },
         css: `
-#${ScriptIdentifier}_settings { background: #eee; }
-.field_label { display: inline-block; min-width: 100px; }
-`,
+            #${ProductName}_settings { background: #eee; }
+            .field_label { display: inline-block; min-width: 100px; }
+        `,
     });
 
     document.addEventListener('keydown', function (event) {
         const mappingInfo = keyMapping[event.key];
         if (mappingInfo
          && ((!mappingInfo.ctrl && !event.ctrlKey) || (mappingInfo.ctrl && event.ctrlKey))
+         && ((!mappingInfo.alt && !event.altKey) || (mappingInfo.alt && event.altKey))
          && (!event.repeat || (event.repeat && mappingInfo.repeat))
          && !(document.activeElement instanceof HTMLTextAreaElement)
          && !(document.activeElement instanceof HTMLInputElement)) {
@@ -180,8 +383,8 @@
         url: 'https://cdnjs.cloudflare.com/ajax/libs/gif.js/0.2.0/gif.worker.js',
         onload: function (response) {
             if (response.status == 200) {
-                gifWorkerBlob = new Blob([response.responseText], { type: 'application/javascript' });
-                gifWorkerURL = URL.createObjectURL(gifWorkerBlob);
+                gifjs.workerBlob = new Blob([response.responseText], { type: 'application/javascript' });
+                gifjs.workerURL = URL.createObjectURL(gifjs.workerBlob);
             }
             else {
                 alert('Failed to load: gif.worker.js');
@@ -189,132 +392,66 @@
         },
     });
 
-    if (location.hostname === 'www.bilibili.com') {
-        // Replace danmaku switch logic for better experience
-        setInterval(function () {
-            const danmakuSwitchElement = $(danmakuSwitchElementSelector);
-            if (danmakuSwitchElement && !danmakuSwitchElement.dataset.abcLoaded) {
-                const newDanmakuSwitchElement = danmakuSwitchElement.cloneNode(true);
-                newDanmakuSwitchElement.addEventListener('change', function (event) {
-                    const danmakuElement = $(danmakuElementSelector);
-                    danmakuElement.style.visibility = danmakuElement.style.visibility == 'hidden' ? 'visible' : 'hidden';
-                });
-                newDanmakuSwitchElement.dataset.abcLoaded = 'true';
-                danmakuSwitchElement.parentNode.replaceChild(newDanmakuSwitchElement, danmakuSwitchElement);
-                $(danmakuSwitchStyleElementSelector).style.filter = 'hue-rotate(140deg)'; // Change color to indicate script load state
-            }
-        }, 1000);
-    }
-
-    function screenshot(mimeType, extension, quality) {
-        const videoElement = $(videoElementSelector);
-        const canvasElement = document.createElement('canvas');
-        canvasElement.width = videoElement.videoWidth;
-        canvasElement.height = videoElement.videoHeight;
-        const canvas = canvasElement.getContext('2d');
-        canvas.drawImage(videoElement, 0, 0, canvasElement.width, canvasElement.height);
-        const seconds = videoElement.currentTime;
-        canvasElement.toBlob(function (blob) {
-            navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
-        });
-        if (mimeType) {
-            canvasElement.toBlob(function (blob) {
-                const anchorElement = document.createElement('a');
-                const blobURL = URL.createObjectURL(blob);
-                anchorElement.href = blobURL;
-                anchorElement.download =
-                    `${getVideoID()}-${Math.floor(seconds / 60).toFixed(0).padStart(2, "0")}-${Math.floor(seconds % 60).toFixed(0).padStart(2, "0")}.${extension}`;
-                anchorElement.click();
-                URL.revokeObjectURL(blobURL);
-            }, mimeType, quality);
+    setInterval(function () {
+        const videoElement = video.getBaseElement();
+        if (videoElement && videoElement !== video._currentVideoElement) {
+            video._highestFPS = 0;
+            video.frameTimeHistory = [];
+            video._currentVideoElement = videoElement;
+            videoElement.requestVideoFrameCallback(video.videoFrameCallbackHandler);
         }
+    }, 100);
+
+    function $(selector) {
+        return document.querySelector(selector);
     }
-    function record() {
-        const videoElement = $(videoElementSelector);
-        if (gifBeginTime && gifBeginTime >= 0 && gifBeginTime < videoElement.duration) {
-            const delta = Math.round(100 / parseFloat(GM_config.get('gifFPS'))) * 10;
-            const height = GM_config.get('gifHeight');
-            const width = Math.round(height * getAspectRatio());
-            const gif = new GIF({
-                workers: 2,
-                workerScript: gifWorkerURL,
-                quality: Math.pow(2, parseInt(GM_config.get('gifQuality')[0]) - 1),
-                width: width,
-                height: height,
-                dither: GM_config.get('gifDithering') ? 'FloydSteinberg' : false,
-            });
-            const canvasElement = document.createElement('canvas');
-            canvasElement.width = width;
-            canvasElement.height = height;
-            const canvas = canvasElement.getContext('2d');
-            canvas.imageSmoothingQuality = 'high';
-            let gifEndTime = null;
-
-            videoElement.pause();
-
-            if (videoElement.currentTime >= gifBeginTime) {
-                gifEndTime = videoElement.currentTime;
+    function createElement(type, args) {
+        const element = document.createElement(type);
+        for (const prop in args) {
+            const arg = args[prop];
+            if (prop === 'classList' && arg instanceof Array) {
+                element.classList.add(...arg.filter(cls => cls));
+            } else if (prop === 'children' && arg instanceof Array) {
+                element.append(...arg.filter(child => child != null));
+            } else if (prop === 'styles' && arg instanceof Object) {
+                Object.assign(element.style, arg);
+            } else if (prop.startsWith('attr_')) {
+                element.setAttribute(prop.substring(5), arg);
+            } else if (prop.startsWith('on')) {
+                element.addEventListener(prop.substring(2), arg);
             } else {
-                gifEndTime = gifBeginTime;
-                gifBeginTime = videoElement.currentTime;
+                element[prop] = arg;
             }
-
-            videoElement.addEventListener('seeked', function onSeeked(event) {
-                canvas.drawImage(videoElement, 0, 0, canvasElement.width, canvasElement.height);
-                gif.addFrame(canvas, {
-                    delay: delta,
-                    copy: true,
-                });
-                if (videoElement.currentTime + delta / 1000 <= gifEndTime) {
-                    videoElement.currentTime += delta / 1000;
-                } else {
-                    videoElement.removeEventListener('seeked', onSeeked);
-                    gif.on('finished', function(blob) {
-                        window.open(URL.createObjectURL(blob));
-                    });
-                    gif.render();
+        }
+        return element;
+    }
+    function when(predicate, interval = 100) {
+        return new Promise((resolve, reject) => {
+            const timer = setInterval(() => {
+                if (predicate()) {
+                    clearInterval(timer);
+                    resolve();
                 }
-            });
-            videoElement.currentTime = gifBeginTime;
+            }, interval);
+        });
+    }
+    function bindAll(obj) {
+        for (const [key, value] of Object.entries(obj)) {
+            if (typeof value === 'function') {
+                obj[key] = value.bind(obj);
+            } else if (value && typeof value === 'object') {
+                bindAll(value);
+            }
         }
     }
-
-    function nextFrame() {
-        $(videoElementSelector).pause();
-        $(videoElementSelector).currentTime += 1 / getFPS();
-    }
-    function previousFrame() {
-        $(videoElementSelector).pause();
-        $(videoElementSelector).currentTime -= 1 / getFPS();
-    }
-
-    function setMarker() {
-        gifBeginTime = $(videoElementSelector).currentTime;
-        let markerElement = document.getElementById(markerID);
-        if (!markerElement) {
-            markerElement = document.createElement('div');
-            markerElement.id = markerID;
-            markerElement.innerHTML = markerHTML;
-            markerElement.style.position = 'absolute';
-            markerElement.style.pointerEvents = 'none';
-            $(progressBarElementSelector).appendChild(markerElement);
+    function deepMerge(obj1, obj2) {
+        const mergedSubobjects = {};
+        for (const key in obj2) {
+            if (obj1[key] && typeof obj1[key] === 'object' && Object.getPrototypeOf(obj1[key]) === Object.prototype &&
+                obj2[key] && typeof obj2[key] === 'object' && Object.getPrototypeOf(obj2[key]) === Object.prototype) {
+                mergedSubobjects[key] = deepMerge(obj1[key], obj2[key]);
+            }
         }
-        if (location.hostname === 'www.bilibili.com') {
-            markerElement.style.left = `${player.getCurrentTime() / player.getDuration() * 100}%`;
-        } else {
-            markerElement.style.left = `${$(videoElementSelector).currentTime / $(videoElementSelector).duration * 100}%`;
-        }
+        return Object.assign({}, obj1, obj2, mergedSubobjects);
     }
-    function clearMarker() {
-        gifBeginTime = null;
-        const markerElement = document.getElementById(markerID);
-        if (markerElement) markerElement.parentNode.removeChild(markerElement);
-    }
-
-    function getAspectRatio() {
-        const videoElement = $(videoElementSelector);
-        return videoElement.videoWidth / videoElement.videoHeight;
-    }
-
-    function $(selector) { return document.querySelector(selector); }
 })();
